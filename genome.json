@@ -1,0 +1,13 @@
+{
+  "metacognition_lr": 0.05,
+  "emotion_cue": 0.7850000000000003,
+  "novelty_cue": 1,
+  "arousal_cue": 0.1,
+  "drive_cue": 0.1,
+  "salience_emotion_bonus": 0.2,
+  "salience_entity_weight": 0.06,
+  "ne_interrupt_threshold": 0.75,
+  "memory_decay_rate": 0.0002,
+  "memory_consolidate_boost": 0.15,
+  "memory_prune_threshold": 0.05
+}

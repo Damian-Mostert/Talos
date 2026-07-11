@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Talos</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,500;0,600;1,400;1,500&family=Inter:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0a0710;
+    --surface:   #130d1e;
+    --surface-2: #1b1329;
+    --border:    #29203a;
+    --text:      #ddd4ea;
+    --dim:       #6d6182;
+    --accent:    #8fb8e0;   /* live — overwritten by JS to match current mood */
+    --you-bg:    #211a34;
+    --brain-bg:  #140e1f;
+    --you-text:   #cbb8f2;
+    --brain-text: #cfe9e0;
+    --dot:       #2a1f3d;
+    --avatar-shadow: none;
+    --face-grad-1: #201830;
+    --face-grad-2: #0c0714;
+    --face-stroke: #2c2244;
+    --eye-white:   #160f22;
+    --mouth-hole:  #0b0710;
+    --rainbow: linear-gradient(120deg, #ff6b6b, #ffd166, #6ee7b7, #7ee8c1, #8fb8e0, #c9a6ff, #ff6b6b);
+    --neural-opacity: 0.92;
+    --neural-scrim: rgba(10,7,16,0.12);
+    --pulse: 0; /* live — 0..1 overall firing intensity, drives ring brightness */
+    color-scheme: dark;
+  }
+
+  [data-theme="light"] {
+    --bg:        #f6f3fb;
+    --surface:   #ffffff;
+    --surface-2: #f1edf9;
+    --border:    #ded6ee;
+    --text:      #2a2136;
+    --dim:       #948aa8;
+    --you-bg:    #ece3fb;
+    --brain-bg:  #ffffff;
+    --you-text:   #5b3fa0;
+    --brain-text: #226e5a;
+    --dot:       #e3dbf3;
+    --avatar-shadow: drop-shadow(0 18px 34px rgba(90, 70, 130, .3));
+    --face-grad-1: #fbf8ff;
+    --face-grad-2: #e7dcf7;
+    --face-stroke: #d9cdef;
+    --eye-white:   #241a36;
+    --mouth-hole:  #1c1430;
+    --neural-opacity: 0.95;
+    --neural-scrim: rgba(255,255,255,0.4);
+    color-scheme: light;
+  }
+
+  html { transition: none; }
+  body, .msg, #panel, header, footer, #input, .bar-track, .eyebrow::after {
+    transition: background-color .35s ease, color .35s ease, border-color .35s ease;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    grid-template-rows: 1fr;
+    overflow: hidden;
+    position: relative;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: -20%;
+    background:
+      radial-gradient(circle at 20% 25%, color-mix(in srgb, var(--accent) 10%, transparent) 0%, transparent 45%),
+      radial-gradient(circle at 80% 70%, color-mix(in srgb, var(--accent) 6%, transparent) 0%, transparent 40%);
+    animation: drift 40s ease-in-out infinite alternate;
+    pointer-events: none;
+    z-index: 0;
+    transition: background 2s ease;
+  }
+  @keyframes drift {
+    from { transform: rotate(0deg) scale(1); }
+    to   { transform: rotate(8deg) scale(1.08); }
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes rainbow-shift {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  #panel, #chat-col { position: relative; z-index: 1; }
+
+  /* ── LEFT PANEL ─────────────────────────────────────────────────────────── */
+  #panel {
+    background:
+      radial-gradient(circle at 1px 1px, var(--dot) 1px, transparent 0) 0 0/22px 22px,
+      var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 24px 24px;
+    gap: 26px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--dim);
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .eyebrow::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  #avatar-wrap {
+    position: relative;
+    width: 196px;
+    height: 196px;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+
+  /* Fully-rainbow rotating ring — the signature accent, intensity tied to arousal AND to live firing (--pulse) */
+  #rainbow-ring {
+    position: absolute;
+    inset: -16px;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, #ff6b6b, #ffd166, #6ee7b7, #7ee8c1, #8fb8e0, #c9a6ff, #ff6b6b);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+    animation: spin 7s linear infinite;
+    opacity: .3;
+    filter: brightness(calc(1 + var(--pulse, 0) * 0.9)) saturate(calc(1 + var(--pulse, 0) * 0.4));
+    transition: opacity .6s ease, filter .25s ease;
+    pointer-events: none;
+  }
+
+  #glow {
+    position: absolute;
+    inset: -24px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--glow-color, #8fb8e020) 0%, transparent 70%);
+    transition: background 1.5s ease;
+    pointer-events: none;
+  }
+
+  #constellation {
+    position: absolute;
+    inset: -14px;
+    border-radius: 50%;
+    pointer-events: none;
+    opacity: .55;
+  }
+  #constellation circle { transition: opacity 1.2s ease, r .6s ease; }
+  #constellation line   { transition: opacity 1.2s ease, stroke .8s ease; }
+
+  #sparkle-field { position: absolute; inset: -20px; pointer-events: none; }
+  .twinkle {
+    position: absolute;
+    font-size: 12px;
+    opacity: 0;
+    animation: twinkle 3.6s ease-in-out infinite;
+  }
+  .twinkle:nth-child(1) { color: #ffd166; animation-delay: .2s; }
+  .twinkle:nth-child(2) { color: #7ee8c1; animation-delay: 1.3s; }
+  .twinkle:nth-child(3) { color: #c9a6ff; animation-delay: 2.2s; }
+  .twinkle:nth-child(4) { color: #ff6b6b; animation-delay: .8s; }
+  .twinkle:nth-child(5) { color: #f2a6c9; animation-delay: 1.8s; font-size: 13px; }
+  @keyframes twinkle {
+    0%, 100% { opacity: 0; transform: scale(.4) rotate(0deg); }
+    50%      { opacity: .9; transform: scale(1) rotate(30deg); }
+  }
+
+  @keyframes wiggle {
+    0%, 100% { rotate: -2.5deg; }
+    50%      { rotate: 2.5deg; }
+  }
+  #avatar-wrap { animation: wiggle 6s ease-in-out infinite; }
+
+  #avatar { width: 196px; height: 196px; overflow: visible; position: relative; filter: var(--avatar-shadow); }
+  #pupil-l, #pupil-r { transition: transform .18s ease; }
+  #face-stop-1 { stop-color: var(--face-grad-1); transition: stop-color .35s ease; }
+  #face-stop-2 { stop-color: var(--face-grad-2); transition: stop-color .35s ease; }
+  #head        { stroke: var(--face-stroke); transition: stroke .35s ease; }
+  #eye-l, #eye-r { fill: var(--eye-white); transition: fill .35s ease; }
+  #mouth-open  { fill: var(--mouth-hole); transition: fill .35s ease; }
+
+  #mood-label {
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    font-weight: 500;
+    font-size: 20px;
+    letter-spacing: .01em;
+    color: var(--accent);
+    opacity: .95;
+    transition: color 1s ease;
+  }
+
+  #neural { width: 100%; display: flex; flex-direction: column; gap: 11px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; }
+  .bar-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9.5px; font-weight: 500; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--dim); width: 78px; flex-shrink: 0;
+  }
+  .bar-track { flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 2px; transition: width .8s cubic-bezier(.4,0,.2,1), background .8s ease; }
+  .bar-val { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--dim); width: 34px; text-align: right; flex-shrink: 0; }
+
+  /* ── Region legend — labels moved off the canvas and onto the sidebar,
+     each row colored to match its region and living/breathing with real
+     activation data (opacity + glow driven straight from actCurr). ──────── */
+  #region-legend { width: 100%; display: flex; flex-direction: column; gap: 7px; }
+  .region-row { display: flex; align-items: center; gap: 9px; }
+  .region-dot {
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    opacity: .35;
+    transition: opacity .25s ease, box-shadow .25s ease;
+  }
+  .region-name {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--dim); flex: 1;
+  }
+  .region-val {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9.5px; color: var(--dim); width: 30px; text-align: right; flex-shrink: 0;
+  }
+
+  #conn { width: 6px; height: 6px; border-radius: 50%; background: #2d2840; transition: background .4s, box-shadow .4s; flex-shrink: 0; }
+  #conn.on { background: #7ee8c1; box-shadow: 0 0 6px #7ee8c180; }
+
+  #status-row {
+    display: flex; align-items: center; gap: 8px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--dim);
+    letter-spacing: .03em; flex-shrink: 0; margin-top: auto;
+  }
+
+  /* ── Inner monologue ────────────────────────────────────────────────────── */
+  #monologue-wrap { width: 100%; display: flex; flex-direction: column; gap: 6px; }
+  #monologue {
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .thought {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px; line-height: 1.5; color: var(--dim);
+    border-left: 2px solid transparent; padding-left: 7px;
+    animation: fadeUp .15s ease; word-break: break-word;
+  }
+  .thought .ttag { font-weight: 500; margin-right: 4px; }
+  .thought.t-pfc      { border-color: #c9a6ff44; } .thought.t-pfc      .ttag { color: #c9a6ff; }
+  .thought.t-meta     { border-color: #7ee8c144; } .thought.t-meta     .ttag { color: #7ee8c1; }
+  .thought.t-reaf     { border-color: #8fb8e044; } .thought.t-reaf     .ttag { color: #8fb8e0; }
+  .thought.t-ne       { border-color: #ff8a6544; } .thought.t-ne       .ttag { color: #ff8a65; }
+  .thought.t-regulate { border-color: #ffd16644; } .thought.t-regulate .ttag { color: #ffd166; }
+  .thought.t-learned  { border-color: #6ee7b744; } .thought.t-learned  .ttag { color: #6ee7b7; }
+  .thought.t-bg       { border-color: #6ee7b733; } .thought.t-bg       .ttag { color: #6ee7b799; }
+  .thought.t-observe  { border-color: #f2a6c944; } .thought.t-observe  .ttag { color: #f2a6c9; }
+  .thought.t-vision   { border-color: #ffd16644; } .thought.t-vision   .ttag { color: #ffd166; }
+  .thought.t-raw      { border-color: #29203a;   } .thought.t-raw      .ttag { color: #3d3055; }
+  .thought.t-plain    { border-color: #29203a;   }
+
+  #thinking-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent); flex-shrink: 0;
+    opacity: 0; transition: opacity .3s ease;
+  }
+  #thinking-dot.active { opacity: 1; animation: pulse 1s ease-in-out infinite; }
+  #thinking-label {
+    font-family: 'IBM Plex Mono', monospace; font-size: 9.5px;
+    color: var(--accent); opacity: 0; transition: opacity .3s ease; letter-spacing: .05em;
+  }
+
+  /* ── RIGHT / CHAT COLUMN ────────────────────────────────────────────────── */
+  #chat-col { display: flex; flex-direction: column; overflow: hidden; }
+
+  /* Living neural map — fills the entire chat column as an ambient backdrop */
+  #neural-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    opacity: var(--neural-opacity);
+    pointer-events: none;
+    transition: opacity .8s ease;
+  }
+  #neural-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, var(--neural-scrim) 0%, transparent 14%, transparent 82%, var(--neural-scrim) 100%);
+    transition: background .8s ease;
+  }
+  #neural-watermark {
+    position: absolute;
+    right: 18px; bottom: 16px;
+    z-index: 1;
+    display: flex; align-items: center; gap: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--dim);
+    opacity: .6;
+    pointer-events: none;
+  }
+  #neural-watermark::before {
+    content: '';
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+
+  header, #log, footer { position: relative; z-index: 2; }
+
+  header {
+    padding: 18px 26px;
+    border-bottom: 1px solid var(--border);
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    font-size: 16px;
+    font-weight: 500;
+    letter-spacing: .01em;
+    color: var(--accent);
+    transition: color 1s ease, background .8s ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-shrink: 0;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 60%, transparent), color-mix(in srgb, var(--surface) 25%, transparent));
+  }
+
+  #header-left { display: flex; align-items: center; gap: 10px; }
+
+  #theme-toggle {
+    width: 32px; height: 32px; border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color .3s ease, background .3s ease;
+  }
+  #theme-toggle:hover { border-color: var(--accent); }
+  #theme-toggle svg { width: 15px; height: 15px; stroke: var(--dim); transition: stroke .3s ease; }
+  #theme-toggle:hover svg { stroke: var(--accent); }
+  #icon-moon { display: block; }
+  #icon-sun  { display: none; }
+  [data-theme="light"] #icon-moon { display: none; }
+  [data-theme="light"] #icon-sun  { display: block; }
+
+  #pulse-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 8px var(--accent);
+    transition: background 1s ease, box-shadow 1s ease;
+    animation: pulse 2.4s ease-in-out infinite; flex-shrink: 0;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: .5; transform: scale(.85); }
+    50%      { opacity: 1;  transform: scale(1); }
+  }
+
+  #log {
+    flex: 1; overflow-y: auto; padding: 26px 28px;
+    display: flex; flex-direction: column; gap: 13px;
+    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  }
+  #log::-webkit-scrollbar { width: 6px; }
+  #log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .msg {
+    max-width: 66%; padding: 13px 18px; border-radius: 20px;
+    font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+    animation: fadeUp .35s cubic-bezier(.2,.8,.3,1.2);
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px) scale(.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .msg.system {
+    font-family: 'IBM Plex Mono', monospace; color: var(--dim); font-size: 10.5px;
+    letter-spacing: .04em; align-self: center; background: none; padding: 4px 0;
+  }
+  .msg.brain {
+    background: color-mix(in srgb, var(--brain-bg) 90%, transparent);
+    color: var(--brain-text); align-self: flex-start;
+    border-bottom-left-radius: 6px; border: 1px solid var(--border);
+    border-left: 2px solid var(--msg-accent, #7ee8c1);
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    box-shadow: 0 8px 28px rgba(0,0,0,.18);
+  }
+  .msg.you {
+    background: color-mix(in srgb, var(--you-bg) 88%, transparent);
+    color: var(--you-text); align-self: flex-end;
+    border-radius: 20px;
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    box-shadow: 0 8px 28px rgba(0,0,0,.18);
+  }
+  .msg.think {
+    color: #2d3748; font-size: 12px; font-style: italic; align-self: flex-start;
+    background: none; padding: 2px 0; display: none;
+  }
+
+  footer {
+    padding: 18px 26px; border-top: 1px solid var(--border);
+    display: flex; gap: 12px; flex-shrink: 0; align-items: center;
+    background: color-mix(in srgb, var(--surface) 45%, transparent);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  }
+
+  .input-wrap {
+    flex: 1; border-radius: 16px; padding: 2px;
+    background: var(--border);
+    transition: background .3s ease;
+  }
+  .input-wrap:focus-within {
+    background: var(--rainbow);
+    background-size: 300% 300%;
+    animation: rainbow-shift 4s ease infinite;
+    filter: brightness(calc(1 + var(--pulse, 0) * 0.6));
+    transition: filter .25s ease;
+  }
+
+  #input {
+    width: 100%; height: 48px; display: block;
+    background: var(--surface-2);
+    border: none; border-radius: 14px;
+    padding: 13px 17px; color: var(--text);
+    font-family: inherit; font-size: 14px; outline: none;
+    resize: none; line-height: 1.4;
+  }
+
+  #send-btn {
+    position: relative;
+    width: 48px; height: 48px; flex-shrink: 0;
+    border: none; border-radius: 50%;
+    background: var(--surface-2);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  #send-btn::before {
+    content: '';
+    position: absolute; inset: -2px; border-radius: 50%;
+    background: conic-gradient(from 0deg, #ff6b6b, #ffd166, #6ee7b7, #8fb8e0, #c9a6ff, #ff6b6b);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+    animation: spin 4s linear infinite;
+    opacity: .5;
+    filter: brightness(calc(1 + var(--pulse, 0) * 0.9));
+    transition: opacity .2s ease, filter .25s ease;
+  }
+  #send-btn:hover::before { opacity: 1; }
+  #send-btn:active { transform: scale(.92); }
+  #send-btn svg { position: relative; z-index: 1; width: 18px; height: 18px; stroke: var(--text); transition: transform .3s ease; }
+  #send-btn.sending svg { animation: launch .5s ease; }
+  @keyframes launch {
+    0%   { transform: translate(0,0) rotate(0deg); }
+    45%  { transform: translate(7px,-7px) rotate(25deg); opacity: .3; }
+    46%  { transform: translate(-7px,7px) rotate(25deg); opacity: 0; }
+    47%  { transform: translate(-7px,7px) rotate(25deg); opacity: 0; }
+    60%  { transform: translate(-7px,7px) rotate(0deg); opacity: 0; }
+    100% { transform: translate(0,0) rotate(0deg); opacity: 1; }
+  }
+
+  .sparkle {
+    position: fixed; width: 5px; height: 5px; border-radius: 50%;
+    pointer-events: none; z-index: 999;
+    box-shadow: 0 0 6px currentColor;
+    animation: sparkle-out .65s ease-out forwards;
+  }
+  @keyframes sparkle-out {
+    0%   { transform: translate(0,0) scale(1);   opacity: 1; }
+    100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+  }
+
+  /* Thinking loader — animated rainbow border */
+  #typing {
+    display: none;
+    align-self: flex-start;
+    border-radius: 16px;
+    padding: 2px;
+    background: var(--rainbow);
+    background-size: 300% 300%;
+    animation: rainbow-shift 3s ease infinite;
+  }
+  #typing.show { display: flex; }
+  #typing-inner {
+    background: color-mix(in srgb, var(--brain-bg) 92%, transparent);
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    border-radius: 14px;
+    padding: 11px 18px;
+    display: flex; align-items: center; gap: 11px;
+  }
+  #typing-ring {
+    width: 15px; height: 15px; border-radius: 50%; flex-shrink: 0;
+    background: conic-gradient(from 0deg, #ff6b6b, #ffd166, #6ee7b7, #8fb8e0, #c9a6ff, #ff6b6b);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
+    animation: spin 1s linear infinite;
+    filter: brightness(calc(1 + var(--pulse, 0) * 0.9));
+    transition: filter .25s ease;
+  }
+  #typing-text {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--dim);
+    letter-spacing: .03em;
+    min-width: 130px;
+  }
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <div class="eyebrow">state</div>
+
+  <div id="avatar-wrap">
+    <div id="rainbow-ring"></div>
+    <div id="glow"></div>
+    <svg id="constellation" viewBox="0 0 224 224" xmlns="http://www.w3.org/2000/svg">
+      <line x1="20" y1="40" x2="55" y2="15" stroke="#8fb8e0" stroke-width="1"/>
+      <line x1="204" y1="35" x2="170" y2="12" stroke="#8fb8e0" stroke-width="1"/>
+      <line x1="10" y1="130" x2="30" y2="170" stroke="#8fb8e0" stroke-width="1"/>
+      <line x1="214" y1="125" x2="196" y2="168" stroke="#8fb8e0" stroke-width="1"/>
+      <line x1="70" y1="8" x2="112" y2="2" stroke="#8fb8e0" stroke-width="1"/>
+      <line x1="112" y1="2" x2="154" y2="8" stroke="#8fb8e0" stroke-width="1"/>
+      <circle cx="20" cy="40" r="2" fill="#8fb8e0"/>
+      <circle cx="55" cy="15" r="1.6" fill="#8fb8e0"/>
+      <circle cx="204" cy="35" r="2" fill="#8fb8e0"/>
+      <circle cx="170" cy="12" r="1.6" fill="#8fb8e0"/>
+      <circle cx="10" cy="130" r="1.6" fill="#8fb8e0"/>
+      <circle cx="30" cy="170" r="2" fill="#8fb8e0"/>
+      <circle cx="214" cy="125" r="1.6" fill="#8fb8e0"/>
+      <circle cx="196" cy="168" r="2" fill="#8fb8e0"/>
+      <circle cx="70" cy="8" r="1.6" fill="#8fb8e0"/>
+      <circle cx="112" cy="2" r="2" fill="#8fb8e0"/>
+      <circle cx="154" cy="8" r="1.6" fill="#8fb8e0"/>
+    </svg>
+
+    <svg id="avatar" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="faceGrad" cx="45%" cy="40%" r="60%">
+          <stop id="face-stop-1" offset="0%"   stop-color="#201830"/>
+          <stop id="face-stop-2" offset="100%" stop-color="#0c0714"/>
+        </radialGradient>
+        <filter id="glow-filter" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="3" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+
+      <circle id="head" cx="100" cy="100" r="78" fill="url(#faceGrad)" stroke="#2c2244" stroke-width="2"/>
+
+      <circle id="iris-l-outer" cx="72" cy="92" r="19" fill="none" stroke="#8fb8e0" stroke-width="1.2" opacity="0.3"/>
+      <circle id="iris-r-outer" cx="128" cy="92" r="19" fill="none" stroke="#8fb8e0" stroke-width="1.2" opacity="0.3"/>
+
+      <ellipse id="eye-l" cx="72" cy="92" rx="16.5" ry="16.5" fill="#160f22"/>
+      <ellipse id="eye-r" cx="128" cy="92" rx="16.5" ry="16.5" fill="#160f22"/>
+
+      <circle id="pupil-l" cx="72" cy="92" r="8.5" fill="#8fb8e0" filter="url(#glow-filter)"/>
+      <circle id="pupil-r" cx="128" cy="92" r="8.5" fill="#8fb8e0" filter="url(#glow-filter)"/>
+
+      <circle cx="76" cy="87" r="3.2" fill="white" opacity="0.75"/>
+      <circle cx="132" cy="87" r="3.2" fill="white" opacity="0.75"/>
+      <circle cx="68" cy="97" r="1.4" fill="white" opacity="0.55"/>
+      <circle cx="124" cy="97" r="1.4" fill="white" opacity="0.55"/>
+
+      <path id="brow-l" d="M 55 66 Q 72 58 89 66" stroke="#8fb8e0" stroke-width="3.4" fill="none" stroke-linecap="round" opacity="0.75"/>
+      <path id="brow-r" d="M 111 66 Q 128 58 145 66" stroke="#8fb8e0" stroke-width="3.4" fill="none" stroke-linecap="round" opacity="0.75"/>
+
+      <path id="mouth" d="M 82 130 Q 100 141 118 130" stroke="#8fb8e0" stroke-width="3.2" fill="none" stroke-linecap="round" opacity="0.85"/>
+      <ellipse id="mouth-open" cx="100" cy="132" rx="9" ry="5" fill="#0b0710" stroke="#8fb8e0" stroke-width="2" opacity="0"/>
+
+      <ellipse id="blush-l" cx="56" cy="114" rx="13" ry="7.5" fill="#f2a6c9" opacity="0.22"/>
+      <ellipse id="blush-r" cx="144" cy="114" rx="13" ry="7.5" fill="#f2a6c9" opacity="0.22"/>
+
+      <line id="scan" x1="22" y1="100" x2="178" y2="100" stroke="#8fb8e0" stroke-width="1" opacity="0" stroke-dasharray="4 6"/>
+    </svg>
+
+    <div id="sparkle-field">
+      <span class="twinkle" style="top:4%; left:80%;">&#10022;</span>
+      <span class="twinkle" style="top:86%; left:8%;">&#10022;</span>
+      <span class="twinkle" style="top:80%; left:88%;">&#10023;</span>
+      <span class="twinkle" style="top:0%; left:12%;">&#10023;</span>
+      <span class="twinkle" style="top:46%; left:-4%;">&#10084;</span>
+    </div>
+  </div>
+
+  <div id="mood-label">Initialising</div>
+
+  <div class="eyebrow">signal</div>
+
+  <div id="neural">
+    <div class="bar-row">
+      <span class="bar-label">Valence</span>
+      <div class="bar-track"><div class="bar-fill" id="bar-valence" style="width:50%;background:#c9a6ff"></div></div>
+      <span class="bar-val" id="val-valence">0.00</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-label">Arousal</span>
+      <div class="bar-track"><div class="bar-fill" id="bar-arousal" style="width:0%;background:#7ee8c1"></div></div>
+      <span class="bar-val" id="val-arousal">0.00</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-label">Drive</span>
+      <div class="bar-track"><div class="bar-fill" id="bar-drive" style="width:0%;background:#ffb86b"></div></div>
+      <span class="bar-val" id="val-drive">0.00</span>
+    </div>
+    <div class="bar-row">
+      <span class="bar-label">Alertness</span>
+      <div class="bar-track"><div class="bar-fill" id="bar-ne" style="width:0%;background:#ff8a65"></div></div>
+      <span class="bar-val" id="val-ne">0.00</span>
+    </div>
+  </div>
+
+  <div class="eyebrow" style="margin-top:2px">regions</div>
+  <div id="region-legend"></div>
+
+  <div class="eyebrow" style="margin-top:2px">inner monologue</div>
+  <div id="monologue-wrap">
+    <div id="monologue"></div>
+  </div>
+
+  <div id="status-row">
+    <div id="conn"></div>
+    <span id="status-text">Connecting…</span>
+    <div id="thinking-dot" style="margin-left:auto"></div>
+    <span id="thinking-label">processing</span>
+  </div>
+</div>
+
+<div id="chat-col">
+  <canvas id="neural-canvas"></canvas>
+  <div id="neural-scrim"></div>
+  <div id="neural-watermark">neural substrate — live</div>
+
+  <header>
+    <div id="header-left">
+      <div id="pulse-dot"></div>
+      Talos
+    </div>
+    <button id="theme-toggle" aria-label="Toggle light and dark mode" onclick="toggleTheme()">
+      <svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+      </svg>
+      <svg id="icon-sun" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="4"></circle>
+        <line x1="12" y1="1" x2="12" y2="3"></line>
+        <line x1="12" y1="21" x2="12" y2="23"></line>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+        <line x1="1" y1="12" x2="3" y2="12"></line>
+        <line x1="21" y1="12" x2="23" y2="12"></line>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+      </svg>
+    </button>
+  </header>
+
+  <div id="log">
+    <div class="msg system">Connecting to neural substrate…</div>
+  </div>
+
+  <footer>
+    <div class="input-wrap"><textarea id="input" placeholder="Say something…" rows="1"></textarea></div>
+    <button id="send-btn" onclick="send()" aria-label="Send message">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13"></line>
+        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+      </svg>
+    </button>
+  </footer>
+</div>
+
+<script>
+let lightMode = false;
+function toggleTheme() {
+  const root = document.documentElement;
+  const isLight = root.getAttribute('data-theme') === 'light';
+  root.setAttribute('data-theme', isLight ? 'dark' : 'light');
+  lightMode = !isLight;
+  if (typeof buildBrainOutline === 'function' && CW && CH) buildBrainOutline();
+}
+
+let ws;
+let currentMood   = 'calm';
+let currentNeural = { valence: 0, arousal: 0, drive: 0, norepinephrine: 0 };
+let blinkTimer, breathTimer;
+
+const MOOD_COLORS = {
+  engaged:    '#7ee8c1',
+  curious:    '#c9a6ff',
+  unsettled:  '#ff8a65',
+  calm:       '#8fb8e0',
+  reflective: '#9a8fae',
+};
+function currentMoodColor() { return MOOD_COLORS[currentMood] || '#8fb8e0'; }
+
+function connect() {
+  ws = new WebSocket(`ws://${location.host}`);
+
+  ws.onopen = () => {
+    document.getElementById('conn').className = 'on';
+    document.getElementById('status-text').textContent = 'Connected';
+  };
+  ws.onclose = () => {
+    document.getElementById('conn').className = '';
+    document.getElementById('status-text').textContent = 'Reconnecting…';
+    setTimeout(connect, 3000);
+  };
+  ws.onmessage = ({ data }) => {
+    if (typeof data !== 'string') return;
+    const msg = JSON.parse(data);
+    if (msg.type === 'nmap')   { applyNmap(msg); return; }
+    if (msg.mood || msg.neural) applyState(msg.mood, msg.neural);
+    if (msg.type === 'system') addMsg(msg.text, 'system');
+    if (msg.type === 'think')  { addThought(msg.text); setThinking(true); }
+    if (msg.type === 'speaks') { hideTyping(); setThinking(false); addMsg(msg.text, 'brain'); }
+    if (msg.type === 'ready')  { hideTyping(); setThinking(false); addMsg('✓ Ready — say something', 'system'); }
+    if (msg.type === 'state')  {}
+  };
+}
+
+const panel     = document.getElementById('panel');
+const log       = document.getElementById('log');
+const monologue = document.getElementById('monologue');
+const input     = document.getElementById('input');
+const sendBtn   = document.getElementById('send-btn');
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LIVING NEURAL MAP — an ambient, anatomically-arranged brain rendered as
+   the chat column's backdrop. Glowing regions breathe with activation,
+   synapse pulses travel the connectome, and idle sparks keep it alive even
+   with no data flowing. Vector-drawn (not pixel-blocked) so it reads as an
+   actual map rather than a retro meter.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const chatCol      = document.getElementById('chat-col');
+const neuralCanvas = document.getElementById('neural-canvas');
+const nCtx         = neuralCanvas.getContext('2d');
+
+let DPR = Math.min(window.devicePixelRatio || 1, 2);
+let CW = 0, CH = 0;
+lightMode = document.documentElement.getAttribute('data-theme') === 'light';
+
+// Anatomically-inspired layout, front (prefrontal) at top → back (cerebellum)
+// at bottom, bilateral pairs placed left/right. Coordinates are relative (0–1).
+const RDEF = [
+  { name: 'prefrontal',   rx: 0.50, ry: 0.09, rr: 0.115, col: [110,231,183] },
+  { name: 'visual',       rx: 0.20, ry: 0.16, rr: 0.095, col: [255,209,102] },
+  { name: 'sensory',      rx: 0.80, ry: 0.16, rr: 0.095, col: [143,184,224] },
+  { name: 'association',  rx: 0.50, ry: 0.28, rr: 0.125, col: [126,232,193] },
+  { name: 'hippocampus',  rx: 0.27, ry: 0.42, rr: 0.09,  col: [201,166,255] },
+  { name: 'temporal',     rx: 0.73, ry: 0.42, rr: 0.09,  col: [242,166,201] },
+  { name: 'motor',        rx: 0.50, ry: 0.56, rr: 0.11,  col: [255,138,101] },
+  { name: 'cerebellum',   rx: 0.50, ry: 0.75, rr: 0.10,  col: [148,163,184] },
+];
+const RBY_NAME = {};
+RDEF.forEach((r, i) => { RBY_NAME[r.name] = i; });
+
+// The pastel region colors read beautifully with additive ('lighter') blending
+// on a near-black background, but 'lighter' adds toward white — on a white
+// background that means fully invisible. Light mode needs its own, more
+// saturated/deepened palette and a 'multiply' blend so shapes actually tint
+// the page instead of vanishing into it.
+RDEF.forEach(r => {
+  const [cr, cg, cb] = r.col;
+  const max = Math.max(cr, cg, cb) || 1;
+  // Pull each channel down toward a punchier, more saturated version of itself.
+  r.colDark = [cr, cg, cb].map(c => Math.round(Math.min(255, (c / max) * 150 + c * 0.15)));
+});
+function regionCol(r) { return lightMode ? r.colDark : r.col; }
+function neuralBlendMode() { return lightMode ? 'multiply' : 'lighter'; }
+
+// Same connectome as the original grid map, expressed by region name so it
+// survives any future re-layout.
+const CONN_NAMES = [
+  ['sensory','association'], ['sensory','prefrontal'],
+  ['visual','sensory'],      ['visual','association'],
+  ['association','hippocampus'], ['association','prefrontal'],
+  ['hippocampus','association'], ['hippocampus','temporal'], ['hippocampus','prefrontal'],
+  ['temporal','prefrontal'],
+  ['prefrontal','motor'],
+  ['motor','cerebellum'], ['cerebellum','motor'],
+];
+const CONNECTIONS = CONN_NAMES.map(([a,b]) => [RBY_NAME[a], RBY_NAME[b]]);
+
+// Live/target activation per region, same contract as before: mean, peak, firing
+const actTarget = {};
+const actCurr   = {};
+RDEF.forEach(r => {
+  actTarget[r.name] = { mean: 0.045, peak: 0.05, firing: 0 };
+  actCurr[r.name]   = { mean: 0.045, peak: 0.05, firing: 0 };
+});
+let targetDa = 0, targetNe = 0, globalDa = 0, globalNe = 0;
+let globalFiring = 0; // live 0..1 average firing across all regions — drives ring brightness
+
+// Per-region pixel grid — an organic tissue-shaped mask of individual cells
+// that flicker with smooth noise and occasionally flash bright on firing.
+// This is what makes each region read as an actual textured shape "doing
+// its thing" rather than free-floating dust.
+const CELL_SIZE = 6.5; // px, in CSS pixels (DPR-independent)
+let regionCells = [];  // regionCells[ri] = array of cell objects
+
+function buildRegionGrids() {
+  regionCells = RDEF.map((r, ri) => {
+    const cx = r.rx * CW, cy = r.ry * CH;
+    const baseR = r.rr * Math.min(CW, CH);
+    // Deterministic per-region seed so the blob shape is stable across resizes,
+    // but distinct per region (no two regions look like the same cookie-cutter blob).
+    const seed = ri * 12.9898;
+    const wobble = (a) => 1
+      + 0.16 * Math.sin(2.4*a + seed)
+      + 0.10 * Math.sin(4.1*a + seed*1.7)
+      + 0.07 * Math.sin(6.3*a + seed*0.6);
+    const cells = [];
+    const extent = baseR * 1.25;
+    const cols = Math.max(4, Math.ceil((extent * 2) / CELL_SIZE));
+    for (let gy = 0; gy < cols; gy++) {
+      for (let gx = 0; gx < cols; gx++) {
+        const dx = (gx - cols / 2 + 0.5) * CELL_SIZE;
+        const dy = (gy - cols / 2 + 0.5) * CELL_SIZE;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        const ang = Math.atan2(dy, dx);
+        const shapeR = baseR * wobble(ang);
+        if (dist > shapeR) continue;
+        const norm = dist / shapeR; // 0 at core -> 1 at edge
+        // internal tissue texture — patches of denser/sparser "matter"
+        const tex = 0.5 + 0.5 * Math.sin(dx*0.1 + seed*2.3) * Math.cos(dy*0.12 - seed*1.4);
+        const density = Math.max(0.1, (1 - norm*0.82)) * (0.35 + 0.65 * tex);
+        if (density < 0.08) continue; // leaves natural gaps, like real tissue
+        cells.push({
+          x: cx + dx, y: cy + dy,
+          density,
+          phase: Math.random() * Math.PI * 2,
+          phase2: Math.random() * Math.PI * 2,
+          freq: 0.5 + Math.random() * 1.0,
+          size: CELL_SIZE * (0.6 + density * 0.35),
+          fire: 0, // current flash intensity, decays every frame
+        });
+      }
+    }
+    return cells;
+  });
+}
+
+// Ignite a handful of cells within a region — weighted toward denser tissue,
+// same way real activity clusters where there's more matter to fire.
+function igniteRegion(ri, count) {
+  const cells = regionCells[ri];
+  if (!cells || !cells.length) return;
+  let tries = count * 5, done = 0;
+  while (done < count && tries-- > 0) {
+    const c = cells[(Math.random() * cells.length) | 0];
+    if (Math.random() < c.density) {
+      c.fire = Math.min(1, c.fire + 0.65 + Math.random() * 0.5);
+      done++;
+    }
+  }
+}
+
+// Traveling synapse pulses between region pairs
+let arcs = [];
+function spawnArc(si, di, strength) {
+  const s = RDEF[si], d = RDEF[di];
+  arcs.push({
+    sx: s.rx * CW, sy: s.ry * CH,
+    dx: d.rx * CW, dy: d.ry * CH,
+    sc: s.col, dc: d.col,
+    t: 0, speed: 0.45 + strength * 0.75,
+    alpha: 0.45 + strength * 0.5,
+  });
+  if (arcs.length > 40) arcs.shift();
+}
+
+function applyNmap(data) {
+  targetDa = data.da || 0;
+  targetNe = data.ne || 0;
+  for (const [name, vals] of Object.entries(data.regions || {})) {
+    if (actTarget[name]) Object.assign(actTarget[name], vals);
+  }
+  RDEF.forEach((r, ri) => {
+    const act = actTarget[r.name];
+    if (act.firing < 0.01) return;
+    igniteRegion(ri, Math.max(2, Math.floor(act.firing * 22)));
+    CONNECTIONS.forEach(([si, di]) => {
+      if (si === ri && act.firing > 0.05 && Math.random() < act.firing * 0.5) {
+        spawnArc(si, di, act.peak);
+      }
+    });
+  });
+}
+
+// ── Region legend — lives in the sidebar, one row per region, colored to
+// match its canvas region and brightening/dimming with real activation. ────
+const regionLegendEl = document.getElementById('region-legend');
+function buildRegionLegend() {
+  if (regionLegendEl.children.length) return; // already built
+  RDEF.forEach(r => {
+    const [cr, cg, cb] = r.col;
+    const row = document.createElement('div');
+    row.className = 'region-row';
+    row.id = `legend-${r.name}`;
+    row.innerHTML =
+      `<span class="region-dot" style="background: rgb(${cr},${cg},${cb})"></span>` +
+      `<span class="region-name">${r.name}</span>` +
+      `<span class="region-val">0.00</span>`;
+    regionLegendEl.appendChild(row);
+  });
+}
+function updateRegionLegend() {
+  RDEF.forEach(r => {
+    const row = document.getElementById(`legend-${r.name}`);
+    if (!row) return;
+    const act = actCurr[r.name];
+    const dot = row.querySelector('.region-dot');
+    const val = row.querySelector('.region-val');
+    const brightness = Math.min(1, 0.28 + act.mean * 0.9 + act.firing * 0.55);
+    dot.style.opacity = brightness.toFixed(2);
+    dot.style.boxShadow = act.firing > 0.12
+      ? `0 0 ${(4 + act.firing * 6).toFixed(1)}px rgba(${r.col.join(',')},${Math.min(1, act.firing).toFixed(2)})`
+      : 'none';
+    val.textContent = act.mean.toFixed(2);
+  });
+}
+
+// Cached organic brain silhouette — regenerated on resize only
+let outlinePath = null, fissurePath = null, sulciPaths = [];
+function buildBrainOutline() {
+  const cx = CW * 0.5, cy = CH * 0.40;
+  const baseRX = CW * 0.46, baseRY = CH * 0.42;
+  outlinePath = new Path2D();
+  const steps = 96;
+  for (let i = 0; i <= steps; i++) {
+    const a = (i / steps) * Math.PI * 2;
+    const wobble = 1 + 0.05*Math.sin(3*a+1.3) + 0.035*Math.sin(5*a+0.7) + 0.045*Math.sin(7*a+2.1);
+    const x = cx + Math.cos(a) * baseRX * wobble;
+    const y = cy + Math.sin(a) * baseRY * wobble * 1.05;
+    if (i === 0) outlinePath.moveTo(x, y); else outlinePath.lineTo(x, y);
+  }
+  outlinePath.closePath();
+
+  fissurePath = new Path2D();
+  const fx = cx, topY = cy - baseRY * 0.92, botY = cy + baseRY * 0.98;
+  fissurePath.moveTo(fx, topY);
+  const segs = 10;
+  for (let i = 1; i <= segs; i++) {
+    const t = i / segs;
+    const y = topY + (botY - topY) * t;
+    const x = fx + Math.sin(t * Math.PI * 3.2) * CW * 0.012;
+    fissurePath.lineTo(x, y);
+  }
+
+  sulciPaths = [];
+  for (let i = 0; i < 6; i++) {
+    const p = new Path2D();
+    const sx = cx + (Math.random() - 0.5) * baseRX * 1.3;
+    const sy = cy - baseRY * 0.6 + (i / 6) * baseRY * 1.5;
+    const len = baseRX * (0.28 + Math.random() * 0.24);
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    p.moveTo(sx, sy);
+    p.quadraticCurveTo(sx + dir*len*0.5, sy + baseRY*0.05, sx + dir*len, sy - baseRY*0.03);
+    sulciPaths.push(p);
+  }
+
+  // brainstem taper from cerebellum down to the bottom edge
+  const stem = RDEF[RBY_NAME.cerebellum];
+  const stx = stem.rx * CW, sty = stem.ry * CH + stem.rr * Math.min(CW,CH) * 0.5;
+  brainstemPath = new Path2D();
+  brainstemPath.moveTo(stx - 5, sty);
+  brainstemPath.quadraticCurveTo(stx - 4, CH * 0.9, stx, CH);
+  brainstemPath.moveTo(stx + 5, sty);
+  brainstemPath.quadraticCurveTo(stx + 4, CH * 0.9, stx, CH);
+}
+let brainstemPath = null;
+
+function resizeCanvas() {
+  const rect = chatCol.getBoundingClientRect();
+  CW = rect.width; CH = rect.height;
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  neuralCanvas.width  = Math.max(1, Math.round(CW * DPR));
+  neuralCanvas.height = Math.max(1, Math.round(CH * DPR));
+  neuralCanvas.style.width  = CW + 'px';
+  neuralCanvas.style.height = CH + 'px';
+  nCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  buildBrainOutline();
+  buildRegionGrids();
+  buildRegionLegend();
+}
+window.addEventListener('resize', resizeCanvas);
+
+let lastFrame = 0, breathPhaseN = 0;
+function renderNeural(ts) {
+  requestAnimationFrame(renderNeural);
+  if (!CW || !CH) return;
+  const dt = Math.min((ts - lastFrame) / 1000 || 0.016, 0.05);
+  lastFrame = ts;
+  breathPhaseN += dt;
+
+  const k = 1 - Math.pow(0.015, dt);
+  for (const r of RDEF) {
+    const c = actCurr[r.name], t = actTarget[r.name];
+    c.mean   += (t.mean   - c.mean)   * k;
+    c.peak   += (t.peak   - c.peak)   * k;
+    c.firing += (t.firing - c.firing) * k;
+  }
+  globalDa += (targetDa - globalDa) * k;
+  globalNe += (targetNe - globalNe) * k;
+
+  // Ambient idle firing so the tissue never looks dead, even with no backend data
+  RDEF.forEach((r, ri) => {
+    const baseline = 0.1 + actCurr[r.name].mean * 0.55;
+    if (Math.random() < baseline * dt * 2.4) igniteRegion(ri, 1 + ((Math.random() * 2) | 0));
+  });
+
+  // Real, data-driven pulse: how hard the whole "brain" is currently firing.
+  // Every ring/border in the UI reads this instead of animating for its own
+  // sake — they dim when the substrate is quiet and brighten when it fires.
+  let firingSum = 0;
+  RDEF.forEach(r => { firingSum += actCurr[r.name].firing; });
+  const rawFiring = firingSum / RDEF.length;
+  globalFiring += (rawFiring - globalFiring) * Math.min(1, dt * 6);
+  document.documentElement.style.setProperty('--pulse', Math.min(1, globalFiring * 2.2).toFixed(3));
+
+  updateRegionLegend();
+
+  nCtx.clearRect(0, 0, CW, CH);
+
+  const moodCol = hexToRgb(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
+
+  // Faint starfield dust
+  nCtx.save();
+  nCtx.globalAlpha = 0.5;
+  nCtx.fillStyle = lightMode ? 'rgba(90,80,130,0.6)' : 'rgba(180,170,210,0.5)';
+  for (let i = 0; i < 26; i++) {
+    const sx = (i * 137.5) % CW;
+    const sy = (i * 71.3 + Math.sin(breathPhaseN * 0.2 + i) * 8) % CH;
+    nCtx.globalAlpha = 0.05 + 0.05 * Math.abs(Math.sin(breathPhaseN * 0.5 + i));
+    nCtx.beginPath();
+    nCtx.arc(sx, sy, 0.9, 0, Math.PI * 2);
+    nCtx.fill();
+  }
+  nCtx.restore();
+
+  // Organic brain silhouette + fissure + sulci
+  if (outlinePath) {
+    const outlineCol = lightMode ? moodCol.map(c => Math.round(c * 0.55)) : moodCol;
+    const outlineBase = lightMode ? 0.38 : 0.14;
+    const fissureBase = lightMode ? 0.28 : 0.10;
+    nCtx.save();
+    nCtx.strokeStyle = `rgba(${outlineCol.join(',')},${(outlineBase + globalNe * 0.22).toFixed(3)})`;
+    nCtx.lineWidth = lightMode ? 1.4 : 1.1;
+    nCtx.stroke(outlinePath);
+    nCtx.strokeStyle = `rgba(${outlineCol.join(',')},${fissureBase.toFixed(3)})`;
+    nCtx.lineWidth = lightMode ? 1.0 : 0.8;
+    nCtx.stroke(fissurePath);
+    sulciPaths.forEach(p => nCtx.stroke(p));
+    if (brainstemPath) nCtx.stroke(brainstemPath);
+    nCtx.restore();
+  }
+
+  // Region glow (soft radial gradient, breathing with activation)
+  RDEF.forEach((r, ri) => {
+    const act = actCurr[r.name];
+    const cx = r.rx * CW, cy = r.ry * CH;
+    const baseR = r.rr * Math.min(CW, CH);
+    const breathe = 1 + 0.08 * Math.sin(breathPhaseN * 0.6 + ri * 1.7);
+    const rad = baseR * (1 + act.peak * 0.4) * breathe;
+    const alpha = (lightMode ? 0.10 : 0.05) + act.mean * (lightMode ? 0.5 : 0.3);
+    const [cr, cg, cb] = regionCol(r);
+    const grad = nCtx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    grad.addColorStop(0, `rgba(${cr},${cg},${cb},${alpha.toFixed(3)})`);
+    grad.addColorStop(0.55, `rgba(${cr},${cg},${cb},${(alpha*0.35).toFixed(3)})`);
+    grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+    nCtx.save();
+    nCtx.globalCompositeOperation = neuralBlendMode();
+    nCtx.fillStyle = grad;
+    nCtx.beginPath();
+    nCtx.arc(cx, cy, rad, 0, Math.PI * 2);
+    nCtx.fill();
+    nCtx.restore();
+  });
+
+  // Region tissue — the pixel grid itself. Each cell flickers with smooth,
+  // individually-phased noise, and brightens sharply when ignited, so the
+  // whole organic silhouette reads as texture actively "thinking."
+  nCtx.save();
+  nCtx.globalCompositeOperation = neuralBlendMode();
+  RDEF.forEach((r, ri) => {
+    const act = actCurr[r.name];
+    const cells = regionCells[ri];
+    if (!cells) return;
+    const [cr, cg, cb] = regionCol(r);
+    const activation = (lightMode ? 0.16 : 0.08) + act.mean * (lightMode ? 1.1 : 0.8);
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
+      if (c.fire > 0) {
+        c.fire *= Math.pow(0.04, dt);
+        if (c.fire < 0.015) c.fire = 0;
+      }
+      const flicker = 0.5
+        + 0.32 * Math.sin(breathPhaseN * c.freq + c.phase)
+        + 0.18 * Math.sin(breathPhaseN * c.freq * 1.9 + c.phase2);
+      let bright = c.density * activation * (0.5 + 0.5 * flicker);
+      bright = Math.min(1, bright + c.fire * c.density);
+      if (bright < 0.02) continue;
+      nCtx.fillStyle = lightMode
+        ? `rgba(${cr},${cg},${cb},${Math.min(1, bright * 1.6 + 0.1).toFixed(3)})`
+        : `rgba(${cr},${cg},${cb},${bright.toFixed(3)})`;
+      const sz = c.size * (1 + c.fire * 0.55);
+      nCtx.fillRect(c.x - sz / 2, c.y - sz / 2, sz, sz);
+    }
+  });
+  nCtx.restore();
+
+  // Traveling synapse pulses
+  nCtx.save();
+  nCtx.globalCompositeOperation = neuralBlendMode();
+  for (let i = arcs.length - 1; i >= 0; i--) {
+    const arc = arcs[i];
+    arc.t += arc.speed * dt;
+    if (arc.t >= 1) { arcs.splice(i, 1); continue; }
+    const mx = (arc.sx + arc.dx) / 2 + (arc.dy - arc.sy) * 0.18;
+    const my = (arc.sy + arc.dy) / 2 - (arc.dx - arc.sx) * 0.18;
+    const head = arc.t, tail = Math.max(0, arc.t - 0.28);
+    const steps = 10;
+    const alpha = arc.alpha * Math.sin(arc.t * Math.PI) * (lightMode ? 1.5 : 1);
+    const [r1,g1,b1] = arc.sc, [r2,g2,b2] = arc.dc;
+    let cr = (r1 + (r2-r1)*arc.t)|0, cg = (g1 + (g2-g1)*arc.t)|0, cb = (b1 + (b2-b1)*arc.t)|0;
+    if (lightMode) {
+      const mx2 = Math.max(cr, cg, cb) || 1;
+      cr = Math.round(Math.min(255, (cr/mx2)*150 + cr*0.15));
+      cg = Math.round(Math.min(255, (cg/mx2)*150 + cg*0.15));
+      cb = Math.round(Math.min(255, (cb/mx2)*150 + cb*0.15));
+    }
+    nCtx.beginPath();
+    for (let s = 0; s <= steps; s++) {
+      const u = tail + (head - tail) * (s / steps), iu = 1 - u;
+      const bx = iu*iu*arc.sx + 2*iu*u*mx + u*u*arc.dx;
+      const by = iu*iu*arc.sy + 2*iu*u*my + u*u*arc.dy;
+      s === 0 ? nCtx.moveTo(bx, by) : nCtx.lineTo(bx, by);
+    }
+    nCtx.strokeStyle = `rgba(${cr},${cg},${cb},${Math.min(1,alpha).toFixed(2)})`;
+    nCtx.lineWidth = 1.4;
+    nCtx.lineCap = 'round';
+    nCtx.stroke();
+    // glowing head dot
+    const headX = arc.sx + (arc.dx - arc.sx) * head, headY = arc.sy + (arc.dy - arc.sy) * head;
+    nCtx.fillStyle = `rgba(${cr},${cg},${cb},${Math.min(1,alpha*1.4).toFixed(2)})`;
+    nCtx.beginPath();
+    nCtx.arc(headX, headY, 2.4, 0, Math.PI * 2);
+    nCtx.fill();
+  }
+  nCtx.restore();
+}
+requestAnimationFrame(renderNeural);
+
+function hexToRgb(hex) {
+  hex = (hex || '#8fb8e0').replace('#','').trim();
+  if (hex.length === 3) hex = hex.split('').map(c => c+c).join('');
+  const n = parseInt(hex, 16);
+  if (isNaN(n)) return [143,184,224];
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+const typingEl = (() => {
+  const el = document.createElement('div');
+  el.id = 'typing';
+  el.innerHTML = '<div id="typing-inner"><div id="typing-ring"></div><span id="typing-text">Thinking</span></div>';
+  return el;
+})();
+
+const TAG_RE = /^\[([a-zA-Z_]+)\]/;
+function addThought(text) {
+  const m   = text.match(TAG_RE);
+  const tag  = m ? m[1].toLowerCase() : 'plain';
+  const body = m ? text.slice(m[0].length).trim() : text;
+  const d = document.createElement('div');
+  d.className = `thought t-${tag}`;
+  d.innerHTML = `<span class="ttag">[${tag}]</span>${body}`;
+  monologue.appendChild(d);
+  if (monologue.children.length > 150) monologue.firstChild.remove();
+  panel.scrollTop = panel.scrollHeight;
+}
+
+let _thinking = false;
+function setThinking(on) {
+  if (_thinking === on) return;
+  _thinking = on;
+  $('thinking-dot').classList.toggle('active', on);
+  $('thinking-label').style.opacity = on ? '1' : '0';
+}
+
+function addMsg(text, cls) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + cls;
+  d.textContent = text;
+  if (cls === 'brain') d.style.setProperty('--msg-accent', currentMoodColor());
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+
+const THINK_PHRASES = ['Thinking', 'Synthesizing', 'Modeling', 'Reflecting', 'Weighing signals', 'Composing'];
+let thinkTick = 0, thinkInterval;
+function showTyping() {
+  if (!typingEl.parentNode) log.appendChild(typingEl);
+  typingEl.classList.add('show');
+  thinkTick = 0;
+  clearInterval(thinkInterval);
+  thinkInterval = setInterval(() => {
+    thinkTick++;
+    const phrase = THINK_PHRASES[Math.floor(thinkTick / 4) % THINK_PHRASES.length];
+    typingEl.querySelector('#typing-text').textContent = phrase + '.'.repeat(thinkTick % 4);
+  }, 380);
+  log.scrollTop = log.scrollHeight;
+}
+function hideTyping() {
+  typingEl.classList.remove('show');
+  if (typingEl.parentNode) typingEl.parentNode.removeChild(typingEl);
+  clearInterval(thinkInterval);
+}
+
+function spawnSparkles(originEl) {
+  const rect = originEl.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const colors = ['#ff6b6b', '#ffd166', '#6ee7b7', '#7ee8c1', '#8fb8e0', '#c9a6ff'];
+  const count = 10;
+  for (let i = 0; i < count; i++) {
+    const s = document.createElement('div');
+    s.className = 'sparkle';
+    const angle = (Math.PI * 2 * i) / count + Math.random() * 0.35;
+    const dist = 24 + Math.random() * 22;
+    s.style.setProperty('--dx', (Math.cos(angle) * dist).toFixed(1) + 'px');
+    s.style.setProperty('--dy', (Math.sin(angle) * dist).toFixed(1) + 'px');
+    s.style.color = colors[i % colors.length];
+    s.style.background = colors[i % colors.length];
+    s.style.left = cx + 'px';
+    s.style.top = cy + 'px';
+    document.body.appendChild(s);
+    s.addEventListener('animationend', () => s.remove());
+  }
+}
+
+function send() {
+  const text = input.value.trim();
+  if (!text || !ws || ws.readyState !== 1) return;
+  addMsg(text, 'you');
+  ws.send(JSON.stringify({ text }));
+  input.value = '';
+  input.style.height = '48px';
+  showTyping();
+
+  spawnSparkles(sendBtn);
+  sendBtn.classList.add('sending');
+  setTimeout(() => sendBtn.classList.remove('sending'), 500);
+
+  // A message landing gives the tissue a little jolt of activity
+  RDEF.forEach((r, ri) => { if (Math.random() < 0.6) igniteRegion(ri, 2 + ((Math.random() * 3) | 0)); });
+}
+
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+input.addEventListener('input', () => {
+  input.style.height = '48px';
+  input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+});
+
+const $ = id => document.getElementById(id);
+const lerped = { valence: 0, arousal: 0, drive: 0, ne: 0 };
+function lerp(a, b, t) { return a + (b - a) * t; }
+function applyState(mood, neural) {
+  if (mood)   currentMood   = mood;
+  if (neural) currentNeural = neural;
+}
+
+function animationLoop() {
+  const { valence, arousal, drive, norepinephrine: ne = 0 } = currentNeural;
+  lerped.valence = lerp(lerped.valence, valence, 0.04);
+  lerped.arousal = lerp(lerped.arousal, arousal, 0.04);
+  lerped.drive   = lerp(lerped.drive,   drive,   0.04);
+  lerped.ne      = lerp(lerped.ne,      ne,      0.06);
+
+  updateBars();
+  updateFace();
+  updateGlow();
+  updateConstellation();
+  requestAnimationFrame(animationLoop);
+}
+
+function updateBars() {
+  const v = lerped.valence, a = lerped.arousal, d = lerped.drive, n = lerped.ne;
+  $('bar-valence').style.width = ((v + 1) / 2 * 100).toFixed(1) + '%';
+  $('val-valence').textContent = v.toFixed(2);
+  $('bar-arousal').style.width = (Math.max(0, a) * 100).toFixed(1) + '%';
+  $('val-arousal').textContent = a.toFixed(2);
+  $('bar-drive').style.width = (Math.max(0, d) * 100).toFixed(1) + '%';
+  $('val-drive').textContent = d.toFixed(2);
+  $('bar-ne').style.width = (Math.max(0, n) * 100).toFixed(1) + '%';
+  $('val-ne').textContent = n.toFixed(2);
+}
+
+function updateFace() {
+  const v = lerped.valence, a = lerped.arousal, d = lerped.drive, n = lerped.ne;
+
+  const moodY = 130 + v * -14 - 3;
+  $('mouth').setAttribute('d', `M 82 130 Q 100 ${moodY.toFixed(1)} 118 130`);
+
+  const excitement = a * Math.max(0, v);
+  $('mouth').setAttribute('opacity', (0.8 - excitement * 0.55).toFixed(2));
+  $('mouth-open').setAttribute('opacity', (excitement * 0.95).toFixed(2));
+  $('mouth-open').setAttribute('ry', (4.5 + excitement * 5).toFixed(1));
+  $('mouth-open').setAttribute('rx', (8 + excitement * 5).toFixed(1));
+
+  const distress = a * Math.max(0, -v);
+  const twitch = distress > 0.05 ? Math.sin(Date.now() / 220) * distress * 3 : 0;
+
+  const browLift  = a * -8;
+  const furrow    = v < 0 ? (v * -6) : 0;
+  const browLY    = 66 + browLift + twitch;
+  const browRY    = 66 + browLift - twitch;
+  const browLMidY = 58 + browLift - furrow;
+  const browRMidY = 58 + browLift - furrow;
+
+  $('brow-l').setAttribute('d', `M 55 ${browLY.toFixed(1)} Q 72 ${browLMidY.toFixed(1)} 89 ${browLY.toFixed(1)}`);
+  $('brow-r').setAttribute('d', `M 111 ${browRY.toFixed(1)} Q 128 ${browRMidY.toFixed(1)} 145 ${browRY.toFixed(1)}`);
+
+  const pupilR = 6.5 + a * 4;
+  $('pupil-l').setAttribute('r', pupilR.toFixed(1));
+  $('pupil-r').setAttribute('r', pupilR.toFixed(1));
+
+  const eyeRY = excitement > 0.15
+    ? 16.5 + excitement * 3
+    : 16.5 - Math.max(0, v) * 3;
+  $('eye-l').setAttribute('ry', eyeRY.toFixed(1));
+  $('eye-r').setAttribute('ry', eyeRY.toFixed(1));
+
+  const blushOp = 0.22 + Math.max(0, v) * 0.45;
+  $('blush-l').setAttribute('opacity', blushOp.toFixed(3));
+  $('blush-r').setAttribute('opacity', blushOp.toFixed(3));
+
+  const irisOp = 0.15 + d * 0.5;
+  $('iris-l-outer').setAttribute('opacity', irisOp.toFixed(3));
+  $('iris-r-outer').setAttribute('opacity', irisOp.toFixed(3));
+
+  $('scan').setAttribute('opacity', (n * 0.6).toFixed(3));
+
+  const col = currentMoodColor();
+  $('mood-label').textContent = currentMood.charAt(0).toUpperCase() + currentMood.slice(1);
+  $('mood-label').style.color = col;
+  document.documentElement.style.setProperty('--accent', col);
+
+  $('pupil-l').setAttribute('fill', col);
+  $('pupil-r').setAttribute('fill', col);
+  $('iris-l-outer').setAttribute('stroke', col);
+  $('iris-r-outer').setAttribute('stroke', col);
+  $('brow-l').setAttribute('stroke', col);
+  $('brow-r').setAttribute('stroke', col);
+  $('mouth').setAttribute('stroke', col);
+  $('mouth-open').setAttribute('stroke', col);
+  $('scan').setAttribute('stroke', col);
+}
+
+function updateGlow() {
+  const col = currentMoodColor();
+  const intensity = 0.08 + lerped.arousal * 0.18 + globalFiring * 0.22;
+  $('glow').style.background = `radial-gradient(circle, ${col}${Math.round(Math.min(1,intensity) * 255).toString(16).padStart(2, '0')} 0%, transparent 70%)`;
+  $('rainbow-ring').style.opacity = Math.min(1, 0.22 + lerped.arousal * 0.55 + globalFiring * 0.35).toFixed(2);
+}
+
+function updateConstellation() {
+  const col = currentMoodColor();
+  const a = lerped.arousal;
+  document.querySelectorAll('#constellation circle').forEach((c, i) => {
+    c.setAttribute('fill', col);
+    const flicker = 0.4 + 0.6 * Math.abs(Math.sin(Date.now() / (900 + i * 130)));
+    c.setAttribute('opacity', (0.3 + a * 0.5 * flicker).toFixed(2));
+  });
+  document.querySelectorAll('#constellation line').forEach(l => {
+    l.setAttribute('stroke', col);
+    l.setAttribute('opacity', (0.12 + a * 0.28).toFixed(2));
+  });
+}
+
+function blink() {
+  const el = $('eye-l'), er = $('eye-r');
+  const origRY = parseFloat(el.getAttribute('ry')) || 14;
+  el.setAttribute('ry', '1'); er.setAttribute('ry', '1');
+  setTimeout(() => { el.setAttribute('ry', origRY); er.setAttribute('ry', origRY); }, 120);
+  const interval = 2500 + Math.random() * 3000 - lerped.arousal * 1500;
+  blinkTimer = setTimeout(blink, Math.max(800, interval));
+}
+
+function saccade() {
+  const jitterX = (Math.random() - 0.5) * 6;
+  const jitterY = (Math.random() - 0.5) * 4;
+  $('pupil-l').style.transform = `translate(${jitterX}px, ${jitterY}px)`;
+  $('pupil-r').style.transform = `translate(${jitterX}px, ${jitterY}px)`;
+  setTimeout(() => { $('pupil-l').style.transform = ''; $('pupil-r').style.transform = ''; }, 220);
+  const next = 1600 + Math.random() * 2600 - lerped.arousal * 800;
+  setTimeout(saccade, Math.max(700, next));
+}
+
+let breathPhase = 0;
+function breathe() {
+  breathPhase += 0.03;
+  const bob = Math.sin(breathPhase) * (1 + lerped.arousal * 2);
+  $('avatar').style.transform = `translateY(${bob.toFixed(2)}px)`;
+  breathTimer = requestAnimationFrame(breathe);
+}
+
+resizeCanvas();
+connect();
+requestAnimationFrame(animationLoop);
+setTimeout(blink, 1500);
+setTimeout(saccade, 2000);
+breathe();
+</script>
+</body>
+</html>
